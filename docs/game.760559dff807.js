@@ -1,0 +1,36 @@
+const instructions=[['F',2],['R',1],['F',1],['L',1],['F',1],['R',1],['F',1],['L',1],['F',1],['R',1],['F',1],['R',1],['F',1],['L',1],['F',1],['L',1],['F',1]];
+const G={x:700,y:150,cell:65,cols:10,rows:11}, initial={x:1,y:9,h:0};
+const vectors=[[0,-1],[1,0],[0,1],[-1,0]];
+function simulate(actions){let s={...initial,i:0,n:0,path:[[initial.x,initial.y]]};for(const a of actions){const cmd=instructions[s.i];if(!cmd||cmd[0]!==a)throw Error('Invalid action');if(a==='F'){s.x+=vectors[s.h][0];s.y+=vectors[s.h][1];if(s.x<0||s.x>G.cols||s.y<0||s.y>G.rows)throw Error('Out of bounds');s.path.push([s.x,s.y])}else s.h=(s.h+(a==='R'?1:3))%4;s.n++;if(s.n===cmd[1]){s.n=0;s.i++}}return s}
+const authored=instructions.flatMap(([a,n])=>Array(n).fill(a)),end=simulate(authored);
+const MAP={width:495,height:2000*495/1414,dot:[899.7723577235772,1068.8180894308944]};
+const target={x:G.x+end.x*G.cell-MAP.dot[0]*MAP.width/1414,y:G.y+end.y*G.cell-MAP.dot[1]*MAP.width/1414};
+if(typeof module!=='undefined')module.exports={instructions,simulate,authored,end,G,MAP,target};
+if(typeof document!=='undefined'){
+const $=s=>document.querySelector(s),stage=$('#stage'),map=$('#map');let history=[],phase='route',snapped=false,ctx,audioNodes=[],drag=null;
+const NS='http://www.w3.org/2000/svg';function svg(tag,attrs){const e=document.createElementNS(NS,tag);for(const [k,v]of Object.entries(attrs))e.setAttribute(k,v);return e}
+for(let x=0;x<=10;x++)$('#gridlines').append(svg('line',{x1:G.x+x*65,y1:G.y,x2:G.x+x*65,y2:G.y+715}));for(let y=0;y<=11;y++)$('#gridlines').append(svg('line',{x1:G.x,y1:G.y+y*65,x2:G.x+650,y2:G.y+y*65}));
+function sound(kind){try{ctx??=new(window.AudioContext||window.webkitAudioContext)();ctx.resume();audioNodes.forEach(o=>{try{o.stop()}catch{}});audioNodes=[];const notes=kind==='error'?[220,180]:kind==='win'?[523,659,784,1047]:[659,784];notes.forEach((f,i)=>{const o=ctx.createOscillator(),g=ctx.createGain(),t=ctx.currentTime+i*.11;o.type='sine';o.frequency.value=f;g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(.17/4,t+.02);g.gain.exponentialRampToValueAtTime(.001,t+.22);o.connect(g).connect(ctx.destination);o.start(t);o.stop(t+.24);audioNodes.push(o)})}catch{}}
+let noticeTimer;function notice(t,error=false){$('#feedback').textContent=t;$('#feedback').classList.toggle('error',error);clearTimeout(noticeTimer);noticeTimer=setTimeout(()=>$('#feedback').textContent='',2200)}
+function park(){map.style.left='1400px';map.style.top='170px';map.style.width=MAP.width+'px';map.style.height=MAP.height+'px';map.classList.remove('snapped');snapped=false}
+function render(){const s=simulate(history);$('#cursor').style.display=phase==='route'?'':'none';$('#route').setAttribute('points',s.path.map(([x,y])=>`${G.x+x*65},${G.y+y*65}`).join(' '));$('#cursor').setAttribute('transform',`translate(${G.x+s.x*65} ${G.y+s.y*65}) rotate(${s.h*90})`);$('#undo').disabled=!history.length||phase==='won';$('#actions').hidden=phase!=='route';$('#answer').hidden=phase!=='map';$('#city').disabled=!snapped;$('#check').disabled=!snapped;$('#continue').hidden=phase!=='won';$('#well-done').hidden=phase!=='won';$('#zoom').hidden=!snapped;map.classList.toggle('active',phase==='map'&&!snapped);$('#park-label').hidden=phase!=='route';$('#snap').hidden=phase!=='map'||snapped;
+if(phase==='route'){const [a,n]=instructions[s.i];$('#instruction').textContent=a==='F'?(n===1?'Go straight on.':`Go straight on ${n} squares.`):a==='L'?'Turn left.':'Turn right.';$('#progress').textContent=`Direction ${s.i+1} / ${instructions.length}${n>1?` · ${s.n} / ${n} squares`:''}`;$('#helper').textContent=history.length?'Follow Mrs Claus’s directions.':'Start at START. Face ↑. One tap moves one square.'}
+else if(phase==='map'){$('#instruction').textContent='Put the map on the grid.';$('#progress').textContent='Well done! You did it!';$('#helper').textContent='Look at the end of the line. Where must Father Frost go?'}else{$('#instruction').textContent="Hooray! Go to Manchester!";$('#progress').textContent='Christmas delivery complete';$('#helper').textContent='Continue your Christmas quest.'}}
+function act(a){if(phase!=='route')return;const s=simulate(history);if(instructions[s.i][0]!==a){sound('error');notice('Try again!',true);return}history.push(a);sound('ok');if(simulate(history).i===instructions.length){phase='map';notice('Well done! You did it!')}render()}
+document.querySelectorAll('[data-action]').forEach(b=>b.onclick=()=>act(b.dataset.action));$('#undo').onclick=()=>{if(!history.length||phase==='won')return;history.pop();phase='route';park();$('#city').value='';render()};$('#restart').onclick=()=>{history=[];phase='route';park();$('#city').value='';$('#confetti').replaceChildren();$('#feedback').textContent='';render()};
+function snap(){if(phase!=='map')return;map.style.left=target.x+'px';map.style.top=target.y+'px';snapped=true;map.classList.add('snapped');notice('Look at the end of the line.');render();$('#city').focus()}
+$('#snap').onclick=snap;
+$('#zoom').onclick=()=>{const pts=simulate(history).path.map(([x,y])=>`${(G.x+x*65-target.x)*1414/MAP.width},${(G.y+y*65-target.y)*1414/MAP.width}`).join(' ');$('#zoom-route').setAttribute('points',pts);$('#map-detail').showModal()};$('#close-detail').onclick=()=>$('#map-detail').close();
+
+function point(e){const r=stage.getBoundingClientRect();return{x:(e.clientX-r.left)*1920/r.width,y:(e.clientY-r.top)*1080/r.height}}
+map.onpointerdown=e=>{if(phase!=='map'||snapped)return;e.preventDefault();const p=point(e);drag={x:p.x-parseFloat(map.style.left),y:p.y-parseFloat(map.style.top)};map.setPointerCapture(e.pointerId)};
+map.onpointermove=e=>{if(!drag)return;const p=point(e);map.style.left=Math.max(680,Math.min(1425,p.x-drag.x))+'px';map.style.top=Math.max(80,Math.min(260,p.y-drag.y))+'px'};
+map.onpointerup=()=>{if(!drag)return;drag=null;if(Math.hypot(parseFloat(map.style.left)-target.x,parseFloat(map.style.top)-target.y)<180)snap();else notice('Move the map over the grid.')};map.onpointercancel=()=>drag=null;
+$('#answer').onsubmit=e=>{e.preventDefault();if(!snapped||phase!=='map')return;if($('#city').value.trim().toLowerCase()!=='manchester'){sound('error');notice('Try again!',true);return}phase='won';sound('win');render();for(let i=0;i<70;i++){const p=document.createElement('i');p.style.cssText=`left:${Math.random()*100}%;background:${['#f7d275','#a71f31','#fff2c4','#2b785a'][i%4]};animation-delay:${Math.random()*.9}s;--drift:${Math.random()*300-150}px`;$('#confetti').append(p)}};
+$('#continue').onclick=()=>{const url=window.CHRISTMAS_CONFIG?.continueUrl;if(url){location.assign(url)}else{$('#well-done').hidden=false}};
+document.addEventListener('keydown',e=>{if(e.target.matches('input,button')||e.altKey||e.ctrlKey||e.metaKey)return;const a={ArrowUp:'F',ArrowLeft:'L',ArrowRight:'R'}[e.key];if(a){e.preventDefault();act(a)}});
+park();render();window.quest={getState:()=>({history:[...history],phase,snapped,state:simulate(history),target}),act};
+}
+if(typeof document!=='undefined'){function fit(){const s=Math.min(innerWidth/1920,innerHeight/1080);document.querySelector('#stage').style.transform=`scale(${s})`}addEventListener('resize',fit);fit();
+
+}
